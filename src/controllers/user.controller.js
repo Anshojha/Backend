@@ -4,6 +4,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken"
+
 
 const generateAccessAndRefreshToken = async(userId) => {
     try {
@@ -183,24 +185,28 @@ const logoutUser = asyncHandler(async (req, res) => {
 
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
+
+  console.log("Incoming token ",incomingRefreshToken)
+  
+  if(!incomingRefreshToken) {
+    throw new ApiError(401, "Unauthorized error !!")
+  }
   try {
-    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-    
-    if(!incomingRefreshToken) {
-      throw new ApiError(401, "Unauthorized error !!")
-    }
   
     const decodedToken = jwt.verify(
       incomingRefreshToken,
       process.env.REFRESH_TOKEN_SECRET
     )
+    console.log("decode token",decodedToken)
+  
   
     if(!decodedToken) {
       throw new ApiError(401, "Unauthorized Access !!")
     }
   
     const user = await User.findById(decodedToken?._id)
-    
+    console.log("Uert ----->>>>>", user)
   
     if(!user) {
       throw new ApiError(401, "Invalid refresh token !!")
@@ -216,6 +222,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     }
   
     const { accessToken , newRefreshToken } = await generateAccessAndRefreshToken(user._id)
+
+    console.log("new", newRefreshToken);
   
     return res
     .status(200)
@@ -230,14 +238,21 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     )
   
   } catch (error) {
-    throw new ApiError(401, error?.message ||"Invalid refresh token !!")
+    throw new ApiError(401, "This is the",error?.message || "Invalid refresh token !!")
   }
 })
 
 
 const changeCurrentPassword = asyncHandler(async (req, res) => {
-    const {oldPassword , newPassword } = req.body;
-    const user = await User.findById(req.body?.id)
+    const {username, email, oldPassword , newPassword } = req.body;
+    console.log("req.body", req.body)
+    const user = await User.findOne({
+      $or: [{username}, {email}]
+  })
+
+    console.log("old -> ", oldPassword)
+    console.log("new -> ", newPassword)
+    console.log("user ->", user)
     const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
 
     if(!isPasswordCorrect) {
@@ -256,21 +271,26 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
   return res
   .status(200)
-  .json(200, req.user, "Current user fetched successfully!!")
+  .json(new ApiResponse(
+    200,
+    req.user,
+    "User fetched successfully"
+))
 })
 
 
 const updateAccountDetails = asyncHandler(async(req, res) => {
-  const { fullName , email} = req.body;
+  const { username , fullName , email} = req.body;
 
   if(!fullName || !email) {
     throw new ApiError(400, "All feilds are required !!")
   }
 
-  const user = User.findByIdAndUpdate(
+  const user =await User.findByIdAndUpdate(
     req.user?._id,
     {
       $set : {
+        username,
         fullName,
         email : email 
       }

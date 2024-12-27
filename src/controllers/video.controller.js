@@ -4,14 +4,14 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { Video } from "../models/video.model.js";
 import { User } from "../models/user.model.js";
 import { deleteInCloudinary, uploadOnCloudinary } from "../utils/cloudinary.js";
-import { availableParallelism } from "os";
+
 
 
 
 
 const getAllVideos = asyncHandler(async (req, res) => {
-      const { userId , page = 1, limit = 10, query , sortBy } = req.query
-
+      const { page = 1, limit = 10,  query , sortBy , sortType, userId} = req.query
+      console.log(req.body)
       const videos = await Video.aggregate([
         {
             $match : {
@@ -30,7 +30,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
             }
         },
         {
-            $unwind : "$creatrdBy"
+            $unwind : "$createdBy"
         },
         {
             $project : {
@@ -47,16 +47,18 @@ const getAllVideos = asyncHandler(async (req, res) => {
         },
         {
             $sort : {
-                [sortBy] : sortType === 'asc' ? 1 : 1
+                [sortBy]: sortType === 'asc' ? 1 : -1
             }
         },
         {
-            $skip : (page - 1)*limit
+            $skip : (parseInt(page) - 1)*parseInt(limit)
         },
         {
             $limit : parseInt(limit)
         }
       ])
+
+      console.log(videos)
 
 
       return res
@@ -75,11 +77,15 @@ const getAllVideos = asyncHandler(async (req, res) => {
 const publishAVidos = asyncHandler(async (req, res) => {
     const { description, title } = req.body;
 
+    console.log(req.body)
+
     if(!(description || title)) {
         throw new ApiError(400 , "thumbnail and title required !!")
     }
 
     const videoFileLocatePath = req?.files?.videoFile[0]?.path
+
+    console.log("videoFileLocatePath   ",videoFileLocatePath)
 
     if(!videoFileLocatePath) {
         throw new ApiError(400, "Video file not found !!")
@@ -87,18 +93,21 @@ const publishAVidos = asyncHandler(async (req, res) => {
 
     const videoFile =await uploadOnCloudinary(videoFileLocatePath);
 
+    console.log("videoFile   ",videoFile)
+
     if(!videoFile.url) {
         throw new ApiError(400, "uploading of video file failed !!")
     }
 
     const thumbnailLocalPath = req?.files?.thumbnail[0]?.path
+    console.log("ThumbnailPath   ", thumbnailLocalPath)
 
     if(!thumbnailLocalPath) {
         throw new ApiError(400, "Thumbnai not found !!")
     }
  
     const thumbnail = await uploadOnCloudinary(thumbnailLocalPath)
-
+    console.log("Thumbnail  " , thumbnail)
     if(!thumbnail.url) {
         throw new ApiError(400, "Error while Uplaoding thumbnail is failed !!")
     }
@@ -110,12 +119,14 @@ const publishAVidos = asyncHandler(async (req, res) => {
         title,
         description,
         duration : videoFile.duration,
-        owner : req.body._id
+        owner : req.user?._id
     })
+    
 
+    console.log("saveVideo   ", saveVideo)
 
     if(!saveVideo) {
-        throw new Apierror(500, "Error while saving the video !!")
+        throw new ApiError(500, "Error while saving the video !!")
     }
 
     return res
@@ -133,25 +144,31 @@ const publishAVidos = asyncHandler(async (req, res) => {
 
 const getVideoById = asyncHandler(async (req, res) => {
     const { videoId } = req.params
+    try {
+        console.log("VideoId  ",videoId)
+    
+        if(!videoId) {
+            throw new ApiError(400, "Video id required to get the video")
+        }
+    
+        const video = await Video.findById(videoId)
 
-    if(!videoId) {
-        throw new ApiError(400, "Video id required to get the video")
-
+        console.log(video)
+    
+        if(!video) {
+            throw new ApiError(400, "Video not fonund !!")
+        }
+    
+        return res
+        .status(200)
+        .json(new ApiResponse(
+            200,
+            {video},
+            "Video sent")
+        )
+    } catch (error) {
+        throw new ApiError(400, error?.message || "Error while sending video")
     }
-
-    const video = await Video.findById(videoId)
-
-    if(!video) {
-        throw new ApiError(400, "Video not fonund !!")
-    }
-
-    return res
-    .status(200)
-    .json(
-        200,
-        {video},
-        "Video found successfully !!"
-    )
 })
 
 
@@ -218,41 +235,49 @@ const updatVideo = asyncHandler(async (req, res) => {
 
 
 const deleteVideo = asyncHandler(async (req, res) => {
-    const { videoId} = req.params
+    // const { videoId} = req.params
 
-    if(!videoId) {
-        throw new ApiError(400, "VideoId doesn't exist !! ")
-    }
+    // try {
+    //     if(!videoId) {
+    //         throw new ApiError(400, "VideoId doesn't exist !! ")
+    //     }
+    //     console.log(videoId)
+    //     const video = await Video.findById(videoId)
+    //     console.log(video)
+    //     if(!video) {
+    //         throw new ApiError(400, "Video doesn't exist !!")
+    //     }
+    //     console.log("Video owner " , video?.owner)
+    
+    //     if(!(video?.owner).equals(req.user?._id)) {
+    //         throw new ApiError(400, "You are not allowed to delete !!")
+    //     }
+    
+    //     const videoDelete = await deleteInCloudinary(video.videoFile)
+    //     console.log("videoDelete", videoDelete)
+    
+    //     if(videoDelete.result !== 'ok') {
+    //         throw new ApiError(400, "Not able to delete video file !!")
+    //     }
+    
+    //     const thumbnailDelete = await deleteInCloudinary(video.thumbnail)
+    
+    //     if(thumbnailDelete.result !== 'ok') {
+    //         throw new ApiError(400, "Not able to delte thumbnail !!")
+    //     }
+    
+    //     const deletedVideo = Video.findByIdAndDelete(videoId)
+    
+    //     return res
+    //     .status(200)
+    //     .json(
+    //        new ApiResponse(200, {deletedVideo}, "Video has been deleted successfully !!")
+    //     )
+    // } catch (error) {
+    //     throw new ApiError(400, "Error while deleting the video")
+    // }
 
-    const video = await Video.findById(videoId)
-
-    if(!video) {
-        throw new ApiError(400, "Video doesn't exist !!")
-    }
-
-    if(!(video?.owner).equals(req.user?._id)) {
-        throw new ApiError(400, "You are not allowed to delete !!")
-    }
-
-    const videoDelete = await deleteInCloudinary(videoId.videoFile)
-
-    if(videoDelete.result !== 'ok') {
-        throw new ApiError(400, "Not able to delete video file !!")
-    }
-
-    const thumbnailDelete = await deleteInCloudinary(videoId.thumbnail)
-
-    if(thumbnailDelete.result !== 'ok') {
-        throw new ApiError(400, "Not able to delte thumbnail !!")
-    }
-
-    const deletedVideo = Video.findByIdAndDelete(videoId)
-
-    return res
-    .status(200)
-    .json(
-       new ApiResponse(200, deletedVideo, "Video has been deleted successfully !!")
-    )
+    res.status(200).send('Delete route works');
 })
 
 
